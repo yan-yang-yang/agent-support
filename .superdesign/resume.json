@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/chat": {
+      "targetKind": "new-ui",
+      "projectId": "0ebb71ca-caab-45c3-8365-b7950f6a3f1f",
+      "activeDraftId": "76d14b74-7234-4b07-b342-589d2929d5f6",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [],
+      "contextFiles": [
+        ".superdesign/design-system.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "7d2347349e6e8110e78745ab5e51f93f9c43a800aaf230a0bf2d1ea95591c9de"
+      },
+      "components": [],
+      "drafts": {
+        "76d14b74-7234-4b07-b342-589d2929d5f6": {
+          "title": "公共雨伞智能客服对话页",
+          "visualDirection": "清爽、可信、雨天服务感的移动端客服界面",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-11-16T09:22:50Z"
+    }
+  }
+}
