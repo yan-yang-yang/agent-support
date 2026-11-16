@@ -1,10 +1,31 @@
 # Agent Support
 
-公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换，以及还伞失败、计费问题、附近网点三种模拟业务流程。
+公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换，以及独立的模拟公共雨伞业务服务。还伞失败、计费问题和附近网点三种流程的数据都通过业务适配器查询，不在前端或客服 API 中硬编码订单事实。
 
 ## 本地启动
 
-### 1. FastAPI 后端
+### 1. 模拟公共雨伞业务服务
+
+```bash
+cd services/mock-business
+uv sync
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
+```
+
+业务服务地址：`http://127.0.0.1:8010`
+
+接口文档：`http://127.0.0.1:8010/docs`
+
+固定演示用户：
+
+- `demo-user`：H5 默认用户，具有进行中的租借和计费记录。
+- `demo-return-user`：还伞失败场景，目标网点在线但空位为 0。
+- `demo-billing-user`：计费争议场景，具有可解释的基础费用和超时费用。
+- `demo-nearby-user`：附近网点查询场景。
+
+### 2. FastAPI 客服后端
+
+打开另一个终端：
 
 ```bash
 cd services/api
@@ -16,7 +37,9 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 健康检查：`http://127.0.0.1:8000/health`
 
-### 2. React H5
+客服后端通过 `APP_BUSINESS_BASE_URL` 和 `APP_BUSINESS_INTERNAL_TOKEN` 调用业务服务，默认值可直接用于本地开发。
+
+### 3. React H5
 
 打开另一个终端：
 
@@ -36,6 +59,9 @@ Vite 会把 `/api` 请求代理到本机 `8000` 端口。
 cd services/api
 uv run pytest
 
+cd ../mock-business
+uv run pytest
+
 cd ../../apps/web
 npm run typecheck
 npm run build
@@ -43,7 +69,8 @@ npm run build
 
 ## 当前边界
 
-- FastAPI 返回确定性的模拟 Agent 流，尚未接入真实 OpenAI 模型。
+- 客服 API 仍使用确定性的场景路由和回复模板，尚未接入真实 OpenAI 模型。
+- 业务订单、计费、租借、网点和工单由独立 `mock-business` API 提供。
 - SQLite 用于本地演示；Repository 边界可在后续替换为 PostgreSQL。
 - 首期未实现 RAG 和人工客服接管。
 - `.env`、简历、PDF、运行时数据库和日志不会提交到仓库。

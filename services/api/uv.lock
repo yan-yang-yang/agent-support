@@ -9,13 +9,13 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
 ]
 
@@ -23,15 +23,13 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0,<1" },
     { name = "fastapi", specifier = ">=0.115.0,<1" },
+    { name = "httpx", specifier = ">=0.28.0,<1" },
     { name = "pydantic", specifier = ">=2.10.0,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0,<1" },
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.28.0,<1" },
-    { name = "pytest", specifier = ">=8.3.0,<9" },
-]
+dev = [{ name = "pytest", specifier = ">=8.3.0,<9" }]
 
 [[package]]
 name = "aiosqlite"

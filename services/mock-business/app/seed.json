@@ -1,0 +1,153 @@
+{
+  "users": {
+    "demo-user": {
+      "name": "演示用户",
+      "active_rental_id": "rental-demo-active"
+    },
+    "demo-return-user": {
+      "name": "还伞场景用户",
+      "active_rental_id": "rental-return-active"
+    },
+    "demo-billing-user": {
+      "name": "计费场景用户",
+      "active_rental_id": null
+    },
+    "demo-nearby-user": {
+      "name": "附近网点场景用户",
+      "active_rental_id": null
+    }
+  },
+  "rentals": [
+    {
+      "id": "rental-demo-active",
+      "user_id": "demo-user",
+      "order_id": "US202611160201",
+      "umbrella_id": "UMB-0201",
+      "station_id": "station-tech-a",
+      "started_at": "2026-11-16T08:30:00+08:00",
+      "status": "active"
+    },
+    {
+      "id": "rental-return-active",
+      "user_id": "demo-return-user",
+      "order_id": "US202611160101",
+      "umbrella_id": "UMB-0101",
+      "station_id": "station-tech-a",
+      "started_at": "2026-11-16T08:30:00+08:00",
+      "status": "active"
+    }
+  ],
+  "orders": [
+    {
+      "id": "US202611160201",
+      "user_id": "demo-user",
+      "rental_id": "rental-demo-active",
+      "status": "active",
+      "started_at": "2026-11-16T08:30:00+08:00",
+      "ended_at": null,
+      "duration_minutes": 42,
+      "total_amount": 3.0,
+      "currency": "CNY"
+    },
+    {
+      "id": "US202611160101",
+      "user_id": "demo-return-user",
+      "rental_id": "rental-return-active",
+      "status": "active",
+      "started_at": "2026-11-16T08:30:00+08:00",
+      "ended_at": null,
+      "duration_minutes": 42,
+      "total_amount": 3.0,
+      "currency": "CNY"
+    },
+    {
+      "id": "US202611160083",
+      "user_id": "demo-billing-user",
+      "rental_id": null,
+      "status": "completed",
+      "started_at": "2026-11-15T18:10:00+08:00",
+      "ended_at": "2026-11-15T18:52:00+08:00",
+      "duration_minutes": 42,
+      "total_amount": 3.0,
+      "currency": "CNY"
+    }
+  ],
+  "billing": [
+    {
+      "order_id": "US202611160201",
+      "currency": "CNY",
+      "items": [
+        {"code": "base_fee", "label": "基础使用费", "amount": 2.0},
+        {"code": "overtime_fee", "label": "超时费", "amount": 1.0}
+      ],
+      "total_amount": 3.0,
+      "rule_version": "umbrella-demo-2026-01"
+    },
+    {
+      "order_id": "US202611160101",
+      "currency": "CNY",
+      "items": [
+        {"code": "base_fee", "label": "基础使用费", "amount": 2.0},
+        {"code": "overtime_fee", "label": "超时费", "amount": 1.0}
+      ],
+      "total_amount": 3.0,
+      "rule_version": "umbrella-demo-2026-01"
+    },
+    {
+      "order_id": "US202611160083",
+      "currency": "CNY",
+      "items": [
+        {"code": "base_fee", "label": "基础使用费", "amount": 2.0},
+        {"code": "overtime_fee", "label": "超时费", "amount": 1.0}
+      ],
+      "total_amount": 3.0,
+      "rule_version": "umbrella-demo-2026-01"
+    }
+  ],
+  "stations": [
+    {
+      "id": "station-tech-a",
+      "name": "地铁 1 号线科技园站 A 口",
+      "address": "科技园路 1 号",
+      "lat": 30.2741,
+      "lng": 120.1551,
+      "online": true,
+      "available_umbrellas": 8,
+      "available_docks": 0,
+      "updated_at": "2026-11-16T10:00:00+08:00"
+    },
+    {
+      "id": "station-tech-b",
+      "name": "科技园站 B 口",
+      "address": "科技园路 18 号",
+      "lat": 30.2748,
+      "lng": 120.1568,
+      "online": true,
+      "available_umbrellas": 6,
+      "available_docks": 4,
+      "updated_at": "2026-11-16T10:00:00+08:00"
+    },
+    {
+      "id": "station-south-gate",
+      "name": "文三路园区南门",
+      "address": "文三路 88 号",
+      "lat": 30.2712,
+      "lng": 120.1579,
+      "online": true,
+      "available_umbrellas": 3,
+      "available_docks": 7,
+      "updated_at": "2026-11-16T10:00:00+08:00"
+    },
+    {
+      "id": "station-offline",
+      "name": "科技园西门维护点",
+      "address": "科技园西路 6 号",
+      "lat": 30.275,
+      "lng": 120.154,
+      "online": false,
+      "available_umbrellas": 2,
+      "available_docks": 5,
+      "updated_at": "2026-11-16T09:40:00+08:00"
+    }
+  ]
+}

@@ -8,24 +8,42 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from .business import BusinessGateway, HttpUmbrellaBusinessGateway
 from .config import Settings
 from .repository import ConversationNotFoundError, SQLiteConversationRepository
 from .schemas import ConversationDTO, CreateConversationRequest, MessageDTO, SendMessageRequest
 from .sse import stream_support_reply
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    business_gateway: BusinessGateway | None = None,
+) -> FastAPI:
     resolved_settings = settings or Settings.from_environment()
     repository = SQLiteConversationRepository(resolved_settings.database_path)
+    owns_business_gateway = business_gateway is None
+    resolved_business_gateway = business_gateway or HttpUmbrellaBusinessGateway(
+        base_url=resolved_settings.business_base_url,
+        internal_token=resolved_settings.business_internal_token,
+        timeout_seconds=resolved_settings.business_timeout_seconds,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await repository.initialize()
-        yield
+        try:
+            yield
+        finally:
+            if owns_business_gateway and isinstance(
+                resolved_business_gateway,
+                HttpUmbrellaBusinessGateway,
+            ):
+                await resolved_business_gateway.close()
 
     app = FastAPI(title="Agent Support API", version="0.1.0", lifespan=lifespan)
     app.state.repository = repository
     app.state.settings = resolved_settings
+    app.state.business_gateway = resolved_business_gateway
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -78,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def event_source() -> AsyncIterator[str]:
             async for event in stream_support_reply(
                 repository=repository,
+                business_gateway=resolved_business_gateway,
                 user_id=user_id,
                 conversation_id=conversation_id,
                 content=payload.content.strip(),

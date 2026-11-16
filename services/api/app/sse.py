@@ -6,8 +6,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
 
+from .business import BusinessGateway
 from .repository import SQLiteConversationRepository
-from .scenarios import progress_steps, script_for
+from .scenarios import progress_labels_for, progress_steps, script_for
 
 
 def encode_sse(event: str, data: dict[str, Any]) -> str:
@@ -18,13 +19,13 @@ def encode_sse(event: str, data: dict[str, Any]) -> str:
 async def stream_support_reply(
     *,
     repository: SQLiteConversationRepository,
+    business_gateway: BusinessGateway,
     user_id: str,
     conversation_id: str,
     content: str,
     request_id: str,
     character_delay: float,
 ) -> AsyncIterator[str]:
-    script = script_for(content)
     assistant_id = str(uuid4())
     user_message = await repository.append_message(
         conversation_id,
@@ -42,10 +43,13 @@ async def stream_support_reply(
             "message": user_message.model_dump(mode="json"),
         },
     )
-    yield encode_sse("progress.updated", {"steps": progress_steps(script.progress_labels, 0)})
+    labels = progress_labels_for(content)
+    yield encode_sse("progress.updated", {"steps": progress_steps(labels, 0)})
 
     await asyncio.sleep(0.28)
-    yield encode_sse("progress.updated", {"steps": progress_steps(script.progress_labels, 1)})
+    yield encode_sse("progress.updated", {"steps": progress_steps(labels, 1)})
+
+    script = await script_for(content, user_id, business_gateway)
 
     await asyncio.sleep(0.42)
     yield encode_sse("progress.updated", {"steps": progress_steps(script.progress_labels, 2)})
@@ -55,7 +59,8 @@ async def stream_support_reply(
         await asyncio.sleep(character_delay + punctuation_pause)
         yield encode_sse("assistant.delta", {"delta": character})
 
-    yield encode_sse("business_card", {"card": script.card})
+    if script.card is not None:
+        yield encode_sse("business_card", {"card": script.card})
     yield encode_sse("progress.updated", {"steps": progress_steps(script.progress_labels, 3)})
 
     assistant_message = await repository.append_message(
