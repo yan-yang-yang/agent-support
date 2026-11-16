@@ -8,10 +8,20 @@
       "designSystemPath": ".superdesign/design-system.md",
       "referenceIds": [],
       "contextFiles": [
-        ".superdesign/design-system.md"
+        ".superdesign/design-system.md",
+        "apps/web/src/components/chat/ChatScreen.tsx",
+        "apps/web/src/components/chat/ServiceHeader.tsx",
+        "apps/web/src/components/ui/button.tsx",
+        "apps/web/src/index.css",
+        "apps/web/tailwind.config.ts"
       ],
       "fingerprints": {
-        ".superdesign/design-system.md": "7d2347349e6e8110e78745ab5e51f93f9c43a800aaf230a0bf2d1ea95591c9de"
+        ".superdesign/design-system.md": "7d2347349e6e8110e78745ab5e51f93f9c43a800aaf230a0bf2d1ea95591c9de",
+        "apps/web/src/components/chat/ChatScreen.tsx": "9648befc3517bc3728d95d2a900d73a1c3d0f9bd4f3ddbf90babb626a28165e1",
+        "apps/web/src/components/chat/ServiceHeader.tsx": "a1f04f3fc53cbca07daf91d29fc24cec00e8c96c3b1993556efc53c03a0e7f0e",
+        "apps/web/src/components/ui/button.tsx": "82f44a7a958b76ff912656e621a87a30e9913c0e523836d9f9867d295e91e6b9",
+        "apps/web/src/index.css": "fe2020b5d562508a93b2b68d8ad1dfa6df3b3d0cf43f6240a305eeda3f2b98a5",
+        "apps/web/tailwind.config.ts": "2ad5e00c8c9d21c2aedba6b6e3d58f876adc7f6b2d5d9900aa215ab32b067780"
       },
       "components": [],
       "drafts": {

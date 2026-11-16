@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+
+from .config import Settings
+from .repository import ConversationNotFoundError, SQLiteConversationRepository
+from .schemas import ConversationDTO, CreateConversationRequest, MessageDTO, SendMessageRequest
+from .sse import stream_support_reply
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    resolved_settings = settings or Settings.from_environment()
+    repository = SQLiteConversationRepository(resolved_settings.database_path)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        await repository.initialize()
+        yield
+
+    app = FastAPI(title="Agent Support API", version="0.1.0", lifespan=lifespan)
+    app.state.repository = repository
+    app.state.settings = resolved_settings
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Demo-User", "X-Request-ID"],
+    )
+
+    def current_user(x_demo_user: str | None = Header(default=None)) -> str:
+        return x_demo_user or resolved_settings.default_user_id
+
+    async def owned_conversation(conversation_id: str, user_id: str) -> None:
+        try:
+            await repository.require_conversation(conversation_id, user_id)
+        except ConversationNotFoundError as error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found") from error
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok", "service": "agent-support-api"}
+
+    @app.get("/api/v1/conversations", response_model=list[ConversationDTO])
+    async def list_conversations(user_id: str = Depends(current_user)) -> list[ConversationDTO]:
+        return await repository.list_conversations(user_id)
+
+    @app.post("/api/v1/conversations", response_model=ConversationDTO, status_code=status.HTTP_201_CREATED)
+    async def create_conversation(
+        payload: CreateConversationRequest,
+        user_id: str = Depends(current_user),
+    ) -> ConversationDTO:
+        return await repository.create_conversation(user_id, payload.title)
+
+    @app.get("/api/v1/conversations/{conversation_id}/messages", response_model=list[MessageDTO])
+    async def list_messages(
+        conversation_id: str,
+        user_id: str = Depends(current_user),
+    ) -> list[MessageDTO]:
+        await owned_conversation(conversation_id, user_id)
+        return await repository.list_messages(conversation_id, user_id)
+
+    @app.post("/api/v1/conversations/{conversation_id}/messages:stream")
+    async def stream_message(
+        conversation_id: str,
+        payload: SendMessageRequest,
+        request: Request,
+        user_id: str = Depends(current_user),
+    ) -> StreamingResponse:
+        await owned_conversation(conversation_id, user_id)
+
+        async def event_source() -> AsyncIterator[str]:
+            async for event in stream_support_reply(
+                repository=repository,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                content=payload.content.strip(),
+                request_id=payload.request_id,
+                character_delay=resolved_settings.stream_character_delay,
+            ):
+                if await request.is_disconnected():
+                    break
+                yield event
+
+        return StreamingResponse(
+            event_source(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    return app
+
+
+app = create_app()

@@ -1,13 +1,13 @@
-import { History, RotateCcw, Umbrella } from "lucide-react"
+import { History, Umbrella } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
 interface ServiceHeaderProps {
-  hasMessages: boolean
-  onReset: () => void
+  disabled?: boolean
+  onOpenHistory: () => void
 }
 
-export function ServiceHeader({ hasMessages, onReset }: ServiceHeaderProps) {
+export function ServiceHeader({ disabled = false, onOpenHistory }: ServiceHeaderProps) {
   return (
     <header className="safe-top z-20 flex min-h-[58px] shrink-0 items-center justify-between border-b border-border bg-white px-4">
       <div className="flex items-center gap-3">
@@ -27,11 +27,12 @@ export function ServiceHeader({ hasMessages, onReset }: ServiceHeaderProps) {
         type="button"
         variant="ghost"
         size="icon"
-        aria-label={hasMessages ? "重新开始" : "历史记录"}
-        onClick={hasMessages ? onReset : undefined}
+        aria-label="历史会话"
+        onClick={onOpenHistory}
+        disabled={disabled}
         className="rounded-full text-[#5e6b78]"
       >
-        {hasMessages ? <RotateCcw className="size-5" /> : <History className="size-5" />}
+        <History className="size-5" />
       </Button>
     </header>
   )

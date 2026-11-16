@@ -40,9 +40,19 @@ export interface ChatMessage {
   id: string
   role: "user" | "assistant"
   content: string
+  createdAt?: string
   streaming?: boolean
   progress?: ProgressStep[]
   card?: BusinessCardData
+}
+
+export interface Conversation {
+  id: string
+  title: string
+  preview: string
+  createdAt: string
+  updatedAt: string
+  messageCount: number
 }
 
 export interface StreamScript {

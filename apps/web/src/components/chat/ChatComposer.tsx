@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ChatComposerProps {
+  disabled?: boolean
   isStreaming: boolean
   onSend: (value: string) => void
   onStop: () => void
 }
 
-export function ChatComposer({ isStreaming, onSend, onStop }: ChatComposerProps) {
+export function ChatComposer({ disabled = false, isStreaming, onSend, onStop }: ChatComposerProps) {
   const [value, setValue] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -23,7 +24,7 @@ export function ChatComposer({ isStreaming, onSend, onStop }: ChatComposerProps)
 
   const submit = () => {
     const nextValue = value.trim()
-    if (!nextValue || isStreaming) return
+    if (!nextValue || isStreaming || disabled) return
     setValue("")
     onSend(nextValue)
   }
@@ -35,9 +36,9 @@ export function ChatComposer({ isStreaming, onSend, onStop }: ChatComposerProps)
           ref={textareaRef}
           rows={1}
           value={value}
-          disabled={isStreaming}
+          disabled={isStreaming || disabled}
           maxLength={500}
-          placeholder={isStreaming ? "正在处理，请稍候…" : "请描述你遇到的问题"}
+          placeholder={isStreaming ? "正在处理，请稍候…" : disabled ? "正在加载会话…" : "请描述你遇到的问题"}
           aria-label="输入问题"
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
@@ -62,7 +63,7 @@ export function ChatComposer({ isStreaming, onSend, onStop }: ChatComposerProps)
             type="button"
             size="icon"
             onClick={submit}
-            disabled={!value.trim()}
+            disabled={!value.trim() || disabled}
             aria-label="发送"
             className="mb-0.5 size-9 shrink-0 rounded-full disabled:bg-[#e5ebf0] disabled:text-[#8c98a4]"
           >
