@@ -10,6 +10,9 @@ from fastapi.responses import StreamingResponse
 
 from .business import BusinessGateway, HttpUmbrellaBusinessGateway
 from .config import Settings
+from .model_gateway.factory import create_model_gateway
+from .model_gateway.protocol import ModelGateway
+from .model_gateway.repository import ModelCallRepository
 from .repository import ConversationNotFoundError, SQLiteConversationRepository
 from .schemas import ConversationDTO, CreateConversationRequest, MessageDTO, SendMessageRequest
 from .sse import stream_support_reply
@@ -18,6 +21,7 @@ from .sse import stream_support_reply
 def create_app(
     settings: Settings | None = None,
     business_gateway: BusinessGateway | None = None,
+    model_gateway: ModelGateway | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings.from_environment()
     repository = SQLiteConversationRepository(resolved_settings.database_path)
@@ -27,10 +31,17 @@ def create_app(
         internal_token=resolved_settings.business_internal_token,
         timeout_seconds=resolved_settings.business_timeout_seconds,
     )
+    model_call_repository = ModelCallRepository(resolved_settings.database_path)
+    owns_model_gateway = model_gateway is None
+    resolved_model_gateway = model_gateway or create_model_gateway(
+        resolved_settings,
+        model_call_repository,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await repository.initialize()
+        await model_call_repository.initialize()
         try:
             yield
         finally:
@@ -39,11 +50,15 @@ def create_app(
                 HttpUmbrellaBusinessGateway,
             ):
                 await resolved_business_gateway.close()
+            if owns_model_gateway:
+                await resolved_model_gateway.close()
 
     app = FastAPI(title="Agent Support API", version="0.1.0", lifespan=lifespan)
     app.state.repository = repository
     app.state.settings = resolved_settings
     app.state.business_gateway = resolved_business_gateway
+    app.state.model_gateway = resolved_model_gateway
+    app.state.model_call_repository = model_call_repository
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -63,7 +78,12 @@ def create_app(
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "service": "agent-support-api"}
+        return {
+            "status": "ok",
+            "service": "agent-support-api",
+            "model_provider": resolved_model_gateway.provider_name,
+            "model": resolved_model_gateway.model_name,
+        }
 
     @app.get("/api/v1/conversations", response_model=list[ConversationDTO])
     async def list_conversations(user_id: str = Depends(current_user)) -> list[ConversationDTO]:
@@ -97,6 +117,7 @@ def create_app(
             async for event in stream_support_reply(
                 repository=repository,
                 business_gateway=resolved_business_gateway,
+                model_gateway=resolved_model_gateway,
                 user_id=user_id,
                 conversation_id=conversation_id,
                 content=payload.content.strip(),

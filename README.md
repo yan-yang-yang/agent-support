@@ -1,6 +1,6 @@
 # Agent Support
 
-公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换，以及独立的模拟公共雨伞业务服务。还伞失败、计费问题和附近网点三种流程的数据都通过业务适配器查询，不在前端或客服 API 中硬编码订单事实。
+公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务，以及可切换的 OpenAI-Compatible Model Gateway。还伞失败、计费问题和附近网点三种流程的数据都通过业务适配器查询，不在前端或模型中编造订单事实。
 
 ## 本地启动
 
@@ -39,6 +39,31 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 客服后端通过 `APP_BUSINESS_BASE_URL` 和 `APP_BUSINESS_INTERNAL_TOKEN` 调用业务服务，默认值可直接用于本地开发。
 
+Model Gateway 默认使用 `MODEL_PROVIDER=fake`，不需要外部 API Key。Fake Provider 仍会经过统一的模型流式接口，并记录模型调用、Token 估算、耗时和状态。
+
+如需接入 OpenAI 或支持 Chat Completions 协议的兼容服务，在仓库根目录复制配置：
+
+```bash
+cp .env.example .env
+```
+
+然后设置：
+
+```text
+MODEL_PROVIDER=openai
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=your-model-name
+```
+
+从 `services/api` 启动时加载根目录配置：
+
+```bash
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload --env-file ../../.env
+```
+
+`OPENAI_BASE_URL` 可以替换成其他兼容服务地址；API Key 只保存在被 Git 忽略的 `.env` 中。
+
 ### 3. React H5
 
 打开另一个终端：
@@ -69,7 +94,9 @@ npm run build
 
 ## 当前边界
 
-- 客服 API 仍使用确定性的场景路由和回复模板，尚未接入真实 OpenAI 模型。
+- 默认使用 Fake Model，配置 `MODEL_PROVIDER=openai` 后才会调用真实的 OpenAI-compatible 模型。
+- Model Gateway 已统一文本增量、Tool Call 增量、Usage、完成事件、结构化输出、超时重试和失败记录。
+- 场景识别暂时仍是确定性规则；LangGraph Agent 和安全 Tool Executor 将在后续阶段接入。
 - 业务订单、计费、租借、网点和工单由独立 `mock-business` API 提供。
 - SQLite 用于本地演示；Repository 边界可在后续替换为 PostgreSQL。
 - 首期未实现 RAG 和人工客服接管。

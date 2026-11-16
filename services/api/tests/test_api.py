@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.model_gateway.protocol import ModelGatewayError
 
 
 class FakeBusinessGateway:
@@ -69,6 +71,30 @@ class FakeBusinessGateway:
         return {"id": "TKT-TEST", "status": "open", **payload}
 
 
+class FailingModelGateway:
+    provider_name = "failing-test"
+    model_name = "failing-model"
+
+    async def close(self) -> None:
+        return None
+
+    async def stream_chat(self, request):
+        if False:
+            yield None
+        raise ModelGatewayError(
+            "provider unavailable",
+            safe_code="PROVIDER_UNAVAILABLE",
+            retryable=True,
+        )
+
+    async def complete_structured(self, request, schema):
+        raise ModelGatewayError(
+            "provider unavailable",
+            safe_code="PROVIDER_UNAVAILABLE",
+            retryable=True,
+        )
+
+
 def parse_sse(text: str) -> list[tuple[str, dict[str, object]]]:
     events: list[tuple[str, dict[str, object]]] = []
     for block in text.strip().split("\n\n"):
@@ -112,6 +138,12 @@ def test_conversation_history_and_sse_persist_messages(tmp_path) -> None:
         assert conversations[0]["message_count"] == 2
         assert conversations[0]["title"].startswith("雨伞已经插回去了")
 
+    with sqlite3.connect(tmp_path / "test.db") as database:
+        model_call = database.execute(
+            "SELECT provider, model, status, request_id FROM model_calls"
+        ).fetchone()
+    assert model_call == ("fake", "fake-support-v1", "completed", "request-001")
+
 
 def test_conversations_are_scoped_by_demo_user(tmp_path) -> None:
     app = create_app(
@@ -125,3 +157,23 @@ def test_conversations_are_scoped_by_demo_user(tmp_path) -> None:
             headers={"X-Demo-User": "user-b"},
         )
         assert response.status_code == 404
+
+
+def test_model_failure_falls_back_to_verified_business_response(tmp_path) -> None:
+    app = create_app(
+        Settings(database_path=tmp_path / "fallback.db", stream_character_delay=0),
+        business_gateway=FakeBusinessGateway(),
+        model_gateway=FailingModelGateway(),
+    )
+    with TestClient(app) as client:
+        conversation_id = client.post("/api/v1/conversations", json={}).json()["id"]
+        response = client.post(
+            f"/api/v1/conversations/{conversation_id}/messages:stream",
+            json={"content": "我对订单费用有疑问", "request_id": "request-fallback-001"},
+        )
+
+        assert response.status_code == 200
+        events = parse_sse(response.text)
+        completed = next(data for event, data in events if event == "assistant.completed")
+        assert "ORDER-TEST" in completed["message"]["content"]
+        assert completed["message"]["card"]["kind"] == "billing"
