@@ -101,13 +101,19 @@ def build_runner(tmp_path, *, max_tool_calls: int = 6):
     return AgentRunner(executor=executor, max_tool_calls=max_tool_calls), gateway
 
 
-def run(runner: AgentRunner, text: str, request_id: str = "request-agent-001"):
+def run(
+    runner: AgentRunner,
+    text: str,
+    request_id: str = "request-agent-001",
+    prior_user_messages: tuple[str, ...] = (),
+):
     return asyncio.run(
         runner.run_turn(
             user_id="demo-user",
             conversation_id="conversation-agent-001",
             request_id=request_id,
             content=text,
+            prior_user_messages=prior_user_messages,
         )
     )
 
@@ -118,6 +124,7 @@ def run(runner: AgentRunner, text: str, request_id: str = "request-agent-001"):
         ("伞插回去了还在计费", "return_failure"),
         ("为什么扣了我两次钱", "billing_dispute"),
         ("附近哪里能还伞", "nearby_station"),
+        ("以后叫我小杨，回复简短一点", "profile_update"),
     ],
 )
 def test_routes_supported_scenarios(tmp_path, text: str, scenario: str) -> None:
@@ -172,6 +179,40 @@ def test_unknown_intent_uses_fallback_without_tools(tmp_path) -> None:
     assert result.safe_fallback is True
     assert result.executed_tools == ()
     assert "还伞失败、计费疑问和附近网点" in result.verified_response
+
+
+def test_profile_update_is_acknowledged_without_business_tools(tmp_path) -> None:
+    runner, _ = build_runner(tmp_path)
+    result = run(runner, "以后叫我小杨，回复简短一点")
+
+    assert result.scenario == "profile_update"
+    assert result.safe_fallback is False
+    assert result.executed_tools == ()
+    assert "长期记忆" in result.verified_response
+
+
+def test_ambiguous_follow_up_reuses_recent_supported_scenario(tmp_path) -> None:
+    runner, _ = build_runner(tmp_path)
+    result = run(
+        runner,
+        "还是不行，那怎么办？",
+        prior_user_messages=("伞插不进去，怎么还伞？",),
+    )
+
+    assert result.scenario == "return_failure"
+    assert "create_support_ticket" in result.executed_tools
+
+
+def test_unrelated_question_does_not_inherit_previous_scenario(tmp_path) -> None:
+    runner, _ = build_runner(tmp_path)
+    result = run(
+        runner,
+        "今天天气怎么样？",
+        prior_user_messages=("费用为什么这么高？",),
+    )
+
+    assert result.scenario == "unknown"
+    assert result.executed_tools == ()
 
 
 def test_tool_loop_stops_at_configured_limit(tmp_path) -> None:

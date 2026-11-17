@@ -14,7 +14,10 @@ from .state import AgentState
 
 def build_support_graph(executor: ToolExecutor):
     async def classify(state: AgentState) -> dict[str, object]:
-        scenario = route_scenario(state["user_message"])
+        scenario = route_scenario(
+            state["user_message"],
+            tuple(state.get("prior_user_messages", [])),
+        )
         return {
             "scenario": scenario,
             "stage": "fallback" if scenario == "unknown" else "planning",

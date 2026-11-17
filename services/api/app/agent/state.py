@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Any, Literal, TypedDict
 
 
-Scenario = Literal["return_failure", "billing_dispute", "nearby_station", "unknown"]
+Scenario = Literal[
+    "return_failure",
+    "billing_dispute",
+    "nearby_station",
+    "profile_update",
+    "unknown",
+]
 
 
 class PlannedTool(TypedDict):
@@ -16,6 +22,7 @@ class AgentState(TypedDict, total=False):
     conversation_id: str
     request_id: str
     user_message: str
+    prior_user_messages: list[str]
     scenario: Scenario
     stage: Literal["classifying", "planning", "executing", "composing", "completed", "fallback"]
     planned_tool: PlannedTool | None

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from app.model_gateway.protocol import ModelGatewayError
+from app.model_gateway.types import VERIFIED_RESPONSE_MARKER, ModelRequest, TextDelta
 
 
 class FakeBusinessGateway:
@@ -110,6 +111,26 @@ class FailingModelGateway:
         )
 
 
+class CapturingModelGateway:
+    provider_name = "capturing-test"
+    model_name = "capturing-model"
+
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    async def close(self) -> None:
+        return None
+
+    async def stream_chat(self, request: ModelRequest):
+        self.requests.append(request)
+        content = request.messages[-1].content or ""
+        response = content.split(VERIFIED_RESPONSE_MARKER, 1)[-1].strip()
+        yield TextDelta(response)
+
+    async def complete_structured(self, request, schema):
+        raise NotImplementedError
+
+
 def parse_sse(text: str) -> list[tuple[str, dict[str, object]]]:
     events: list[tuple[str, dict[str, object]]] = []
     for block in text.strip().split("\n\n"):
@@ -192,3 +213,94 @@ def test_model_failure_falls_back_to_verified_business_response(tmp_path) -> Non
         completed = next(data for event, data in events if event == "assistant.completed")
         assert "ORDER-TEST" in completed["message"]["content"]
         assert completed["message"]["card"]["kind"] == "billing"
+
+
+def test_long_term_memory_is_shared_across_user_conversations_and_can_be_cleared(tmp_path) -> None:
+    gateway = CapturingModelGateway()
+    app = create_app(
+        Settings(database_path=tmp_path / "memory-api.db", stream_character_delay=0),
+        business_gateway=FakeBusinessGateway(),
+        model_gateway=gateway,
+    )
+    headers = {"X-Demo-User": "memory-user"}
+    with TestClient(app) as client:
+        first = client.post("/api/v1/conversations", json={}, headers=headers).json()
+        response = client.post(
+            f"/api/v1/conversations/{first['id']}/messages:stream",
+            json={
+                "content": "以后叫我小杨，我的常用网点是软件园 A 口站，回复简短一点",
+                "request_id": "memory-request-001",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+        memories = client.get("/api/v1/memories", headers=headers).json()
+        assert {item["key"]: item["value"] for item in memories} == {
+            "preferred_name": "小杨",
+            "frequent_station": "软件园 A 口站",
+            "response_style": "简洁",
+        }
+        assert client.get(
+            "/api/v1/memories",
+            headers={"X-Demo-User": "another-user"},
+        ).json() == []
+
+        second = client.post("/api/v1/conversations", json={}, headers=headers).json()
+        response = client.post(
+            f"/api/v1/conversations/{second['id']}/messages:stream",
+            json={"content": "附近哪里可以还伞？", "request_id": "memory-request-002"},
+            headers=headers,
+        )
+        events = parse_sse(response.text)
+        completed = next(data for event, data in events if event == "assistant.completed")
+        assert completed["message"]["content"].startswith("小杨，")
+        assert "软件园 A 口站" in (gateway.requests[-1].messages[1].content or "")
+
+        deleted = client.delete("/api/v1/memories", headers=headers).json()
+        assert deleted == {"deleted": 3}
+        assert client.get("/api/v1/memories", headers=headers).json() == []
+
+
+def test_model_receives_bounded_recent_context_plus_rolling_summary(tmp_path) -> None:
+    gateway = CapturingModelGateway()
+    app = create_app(
+        Settings(
+            database_path=tmp_path / "context-api.db",
+            stream_character_delay=0,
+            memory_recent_message_limit=2,
+            memory_summary_max_chars=500,
+        ),
+        business_gateway=FakeBusinessGateway(),
+        model_gateway=gateway,
+    )
+    with TestClient(app) as client:
+        conversation = client.post("/api/v1/conversations", json={}).json()
+        for index, content in enumerate(
+            ("第一次咨询的其他问题", "第二次咨询的其他问题", "第三次咨询的其他问题"),
+            start=1,
+        ):
+            response = client.post(
+                f"/api/v1/conversations/{conversation['id']}/messages:stream",
+                json={"content": content, "request_id": f"context-request-00{index}"},
+            )
+            assert response.status_code == 200
+
+        final_request = gateway.requests[-1]
+        assert len(final_request.messages) == 5
+        assert "第一次咨询的其他问题" in (final_request.messages[1].content or "")
+        assert final_request.messages[2].content == "第二次咨询的其他问题"
+        assert "第三次咨询的其他问题" in (final_request.messages[-1].content or "")
+
+        full_history = client.get(
+            f"/api/v1/conversations/{conversation['id']}/messages"
+        ).json()
+        assert len(full_history) == 6
+        assert [message["role"] for message in full_history] == [
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+            "user",
+            "assistant",
+        ]

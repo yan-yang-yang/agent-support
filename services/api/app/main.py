@@ -11,11 +11,21 @@ from fastapi.responses import StreamingResponse
 from .agent.runner import AgentRunner
 from .business import BusinessGateway, HttpUmbrellaBusinessGateway
 from .config import Settings
+from .memory.repository import MemoryRepository
+from .memory.service import MemoryService
+from .memory.types import MEMORY_LABELS
 from .model_gateway.factory import create_model_gateway
 from .model_gateway.protocol import ModelGateway
 from .model_gateway.repository import ModelCallRepository
 from .repository import ConversationNotFoundError, SQLiteConversationRepository
-from .schemas import ConversationDTO, CreateConversationRequest, MessageDTO, SendMessageRequest
+from .schemas import (
+    ConversationDTO,
+    CreateConversationRequest,
+    DeleteMemoriesResponse,
+    MessageDTO,
+    SendMessageRequest,
+    UserMemoryDTO,
+)
 from .sse import stream_support_reply
 from .tools.executor import ToolExecutor
 from .tools.repository import ToolCallRepository
@@ -41,6 +51,14 @@ def create_app(
         model_call_repository,
     )
     tool_call_repository = ToolCallRepository(resolved_settings.database_path)
+    memory_repository = MemoryRepository(resolved_settings.database_path)
+    memory_service = MemoryService(
+        repository=memory_repository,
+        conversation_repository=repository,
+        recent_message_limit=resolved_settings.memory_recent_message_limit,
+        summary_max_chars=resolved_settings.memory_summary_max_chars,
+        max_long_term_items=resolved_settings.memory_max_long_term_items,
+    )
     tool_executor = ToolExecutor(
         gateway=resolved_business_gateway,
         repository=tool_call_repository,
@@ -55,6 +73,7 @@ def create_app(
         await repository.initialize()
         await model_call_repository.initialize()
         await tool_call_repository.initialize()
+        await memory_repository.initialize()
         try:
             yield
         finally:
@@ -66,7 +85,7 @@ def create_app(
             if owns_model_gateway:
                 await resolved_model_gateway.close()
 
-    app = FastAPI(title="Agent Support API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Agent Support API", version="0.2.0", lifespan=lifespan)
     app.state.repository = repository
     app.state.settings = resolved_settings
     app.state.business_gateway = resolved_business_gateway
@@ -74,11 +93,13 @@ def create_app(
     app.state.model_call_repository = model_call_repository
     app.state.tool_call_repository = tool_call_repository
     app.state.agent_runner = agent_runner
+    app.state.memory_repository = memory_repository
+    app.state.memory_service = memory_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "X-Demo-User", "X-Request-ID"],
     )
 
@@ -111,6 +132,27 @@ def create_app(
     ) -> ConversationDTO:
         return await repository.create_conversation(user_id, payload.title)
 
+    @app.get("/api/v1/memories", response_model=list[UserMemoryDTO])
+    async def list_memories(user_id: str = Depends(current_user)) -> list[UserMemoryDTO]:
+        memories = await memory_repository.list_user_memories(
+            user_id,
+            limit=resolved_settings.memory_max_long_term_items,
+        )
+        return [
+            UserMemoryDTO(
+                key=memory.key,
+                label=MEMORY_LABELS[memory.key],
+                value=memory.value,
+                updated_at=memory.updated_at,
+            )
+            for memory in memories
+        ]
+
+    @app.delete("/api/v1/memories", response_model=DeleteMemoriesResponse)
+    async def delete_memories(user_id: str = Depends(current_user)) -> DeleteMemoriesResponse:
+        deleted = await memory_repository.delete_user_memories(user_id)
+        return DeleteMemoriesResponse(deleted=deleted)
+
     @app.get("/api/v1/conversations/{conversation_id}/messages", response_model=list[MessageDTO])
     async def list_messages(
         conversation_id: str,
@@ -133,6 +175,7 @@ def create_app(
                 repository=repository,
                 agent_runner=agent_runner,
                 model_gateway=resolved_model_gateway,
+                memory_service=memory_service,
                 user_id=user_id,
                 conversation_id=conversation_id,
                 content=payload.content.strip(),

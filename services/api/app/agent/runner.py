@@ -15,8 +15,12 @@ class AgentRunner:
         self.max_tool_calls = max_tool_calls
         self._graph = build_support_graph(executor)
 
-    def progress_labels(self, text: str) -> tuple[str, str, str]:
-        return progress_labels(text)
+    def progress_labels(
+        self,
+        text: str,
+        prior_user_messages: tuple[str, ...] = (),
+    ) -> tuple[str, str, str]:
+        return progress_labels(text, prior_user_messages)
 
     async def stream_turn(
         self,
@@ -25,12 +29,14 @@ class AgentRunner:
         conversation_id: str,
         request_id: str,
         content: str,
+        prior_user_messages: tuple[str, ...] = (),
     ) -> AsyncIterator[AgentEvent]:
         current: AgentState = {
             "user_id": user_id,
             "conversation_id": conversation_id,
             "request_id": request_id,
             "user_message": content,
+            "prior_user_messages": list(prior_user_messages),
             "scenario": "unknown",
             "stage": "classifying",
             "planned_tool": None,
@@ -83,6 +89,7 @@ class AgentRunner:
         conversation_id: str,
         request_id: str,
         content: str,
+        prior_user_messages: tuple[str, ...] = (),
     ) -> AgentResult:
         result: AgentResult | None = None
         async for event in self.stream_turn(
@@ -90,6 +97,7 @@ class AgentRunner:
             conversation_id=conversation_id,
             request_id=request_id,
             content=content,
+            prior_user_messages=prior_user_messages,
         ):
             if isinstance(event, AgentCompletedEvent):
                 result = event.result

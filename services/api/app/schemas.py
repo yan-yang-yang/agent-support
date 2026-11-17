@@ -36,3 +36,19 @@ class SendMessageRequest(BaseModel):
 class ProgressStep(BaseModel):
     label: str
     state: Literal["pending", "active", "complete"]
+
+
+class UserMemoryDTO(BaseModel):
+    key: Literal[
+        "preferred_name",
+        "frequent_station",
+        "response_style",
+        "preferred_language",
+    ]
+    label: str
+    value: str
+    updated_at: datetime
+
+
+class DeleteMemoriesResponse(BaseModel):
+    deleted: int

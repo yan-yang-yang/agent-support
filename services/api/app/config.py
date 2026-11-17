@@ -23,6 +23,9 @@ class Settings:
     model_temperature: float | None = 0.2
     model_max_output_tokens: int | None = 600
     agent_max_tool_calls: int = 6
+    memory_recent_message_limit: int = 6
+    memory_summary_max_chars: int = 1600
+    memory_max_long_term_items: int = 12
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -47,4 +50,7 @@ class Settings:
             model_temperature=float(os.getenv("MODEL_TEMPERATURE", "0.2")),
             model_max_output_tokens=int(os.getenv("MODEL_MAX_OUTPUT_TOKENS", "600")),
             agent_max_tool_calls=int(os.getenv("AGENT_MAX_TOOL_CALLS", "6")),
+            memory_recent_message_limit=int(os.getenv("MEMORY_RECENT_MESSAGE_LIMIT", "6")),
+            memory_summary_max_chars=int(os.getenv("MEMORY_SUMMARY_MAX_CHARS", "1600")),
+            memory_max_long_term_items=int(os.getenv("MEMORY_MAX_LONG_TERM_ITEMS", "12")),
         )

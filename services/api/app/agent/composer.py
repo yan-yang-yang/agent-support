@@ -13,6 +13,12 @@ def compose_result(state: AgentState) -> tuple[str, dict[str, Any] | None]:
         return _compose_billing(state)
     if state["scenario"] == "nearby_station":
         return _compose_nearby(state)
+    if state["scenario"] == "profile_update":
+        return (
+            "好的，我已保存你明确提供的称呼或客服偏好，后续会话会继续使用。"
+            "订单、金额和租借状态不会作为长期记忆保存，仍会实时查询业务系统。",
+            None,
+        )
     return "我暂时无法判断你遇到的问题，请描述还伞、计费或查找附近网点中的具体情况。", None
 
 

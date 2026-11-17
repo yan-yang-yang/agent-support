@@ -80,7 +80,7 @@ function ErrorToast({ message }: { message: string }) {
 function DemoHint() {
   return (
     <div className="mt-5 rounded-2xl border border-dashed border-[#cfd8df] px-4 py-3 text-xs leading-5 text-[#6f7c88]">
-      会话记录由本地 FastAPI 保存；点击快捷问题或输入内容，可查看 SSE 查询进度、逐字回复与业务卡片。
+      会话记录由本地 FastAPI 完整保存；模型只接收滚动摘要和近期消息。你也可以输入“以后叫我小杨”测试跨会话记忆。
     </div>
   )
 }

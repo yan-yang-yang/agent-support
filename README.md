@@ -1,6 +1,6 @@
 # Agent Support
 
-公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务、可切换的 OpenAI-Compatible Model Gateway，以及 LangGraph Agent 与安全 Tool Executor。还伞失败、计费问题和附近网点三种流程的数据都通过白名单工具查询，不在前端或模型中编造订单事实。
+公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务、可切换的 OpenAI-Compatible Model Gateway、LangGraph Agent、安全 Tool Executor，以及长短期记忆和上下文压缩。还伞失败、计费问题和附近网点三种流程的数据都通过白名单工具查询，不在前端或模型中编造订单事实。
 
 ## 本地启动
 
@@ -42,6 +42,18 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 Model Gateway 默认使用 `MODEL_PROVIDER=fake`，不需要外部 API Key。Fake Provider 仍会经过统一的模型流式接口，并记录模型调用、Token 估算、耗时和状态。
 
 Agent 使用 LangGraph 显式编排场景识别、工具规划、工具执行、结果组装和安全降级。业务工具只允许：查询活跃租借、最近订单、计费、网点、附近网点，以及幂等创建客服工单。模型不能提供或覆盖当前用户 ID，也没有结束订单、修改账单或退款工具。每轮最多调用 `AGENT_MAX_TOOL_CALLS` 次工具，默认值为 6。
+
+记忆层将数据分成两部分：
+
+- 会话短期记忆：前端和历史接口始终展示完整消息，模型只接收最近 `MEMORY_RECENT_MESSAGE_LIMIT` 条消息和最多 `MEMORY_SUMMARY_MAX_CHARS` 字的滚动摘要。
+- 用户长期记忆：只保存用户明确提供的称呼、常用网点、回复风格和回复语言，并按当前用户跨会话读取。订单、金额、租借状态和网点库存不会写入长期记忆；手机号、银行卡等敏感信息不会被提取。
+
+查看或清除当前演示用户的长期记忆：
+
+```bash
+curl -H 'X-Demo-User: demo-user' http://127.0.0.1:8000/api/v1/memories
+curl -X DELETE -H 'X-Demo-User: demo-user' http://127.0.0.1:8000/api/v1/memories
+```
 
 如需接入 OpenAI 或支持 Chat Completions 协议的兼容服务，在仓库根目录复制配置：
 
@@ -100,7 +112,10 @@ npm run build
 - Model Gateway 已统一文本增量、Tool Call 增量、Usage、完成事件、结构化输出、超时重试和失败记录。
 - LangGraph Agent 已覆盖还伞失败、计费争议、附近网点和未知意图安全降级。
 - Tool Executor 使用严格参数 Schema、用户身份注入、白名单、调用上限和 `tool_calls` 审计记录。
-- 当前场景预路由采用确定性规则；上下文压缩和长期记忆将在下一阶段接入。
+- 完整聊天记录保存在 `messages` 表；会话摘要保存在 `conversation_memories`，跨会话偏好保存在 `user_memories`。
+- 模型上下文由安全规则、滚动摘要、白名单长期偏好、近期消息和本轮已核验业务结果组成。
+- “还是不行”“那怎么办”等省略主语的追问会参考近期用户消息继承场景；无关新问题不会被旧场景带偏。
+- 当前场景预路由和记忆提取采用确定性规则，便于本地演示、审计和自动化测试。
 - 业务订单、计费、租借、网点和工单由独立 `mock-business` API 提供。
 - SQLite 用于本地演示；Repository 边界可在后续替换为 PostgreSQL。
 - 首期未实现 RAG 和人工客服接管。
