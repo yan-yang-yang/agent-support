@@ -299,6 +299,7 @@ class OpenAICompatibleAdapter:
                 for tool in request.tools
             ]
             body["tool_choice"] = "auto"
+            body["parallel_tool_calls"] = False
         return body
 
     async def _status_error(self, response: httpx.Response) -> ModelGatewayError:

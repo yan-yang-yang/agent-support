@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from .agent.runner import AgentRunner
 from .business import BusinessGateway, HttpUmbrellaBusinessGateway
 from .config import Settings
 from .model_gateway.factory import create_model_gateway
@@ -16,6 +17,8 @@ from .model_gateway.repository import ModelCallRepository
 from .repository import ConversationNotFoundError, SQLiteConversationRepository
 from .schemas import ConversationDTO, CreateConversationRequest, MessageDTO, SendMessageRequest
 from .sse import stream_support_reply
+from .tools.executor import ToolExecutor
+from .tools.repository import ToolCallRepository
 
 
 def create_app(
@@ -37,11 +40,21 @@ def create_app(
         resolved_settings,
         model_call_repository,
     )
+    tool_call_repository = ToolCallRepository(resolved_settings.database_path)
+    tool_executor = ToolExecutor(
+        gateway=resolved_business_gateway,
+        repository=tool_call_repository,
+    )
+    agent_runner = AgentRunner(
+        executor=tool_executor,
+        max_tool_calls=resolved_settings.agent_max_tool_calls,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await repository.initialize()
         await model_call_repository.initialize()
+        await tool_call_repository.initialize()
         try:
             yield
         finally:
@@ -59,6 +72,8 @@ def create_app(
     app.state.business_gateway = resolved_business_gateway
     app.state.model_gateway = resolved_model_gateway
     app.state.model_call_repository = model_call_repository
+    app.state.tool_call_repository = tool_call_repository
+    app.state.agent_runner = agent_runner
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -116,7 +131,7 @@ def create_app(
         async def event_source() -> AsyncIterator[str]:
             async for event in stream_support_reply(
                 repository=repository,
-                business_gateway=resolved_business_gateway,
+                agent_runner=agent_runner,
                 model_gateway=resolved_model_gateway,
                 user_id=user_id,
                 conversation_id=conversation_id,

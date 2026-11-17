@@ -18,6 +18,7 @@ class FakeBusinessGateway:
             "order_id": "ORDER-TEST",
             "station_id": "station-full",
             "started_at": "2026-11-16T08:30:00+08:00",
+            "status": "active",
         }
 
     async def list_recent_orders(self, user_id: str, limit: int = 10) -> list[dict[str, object]]:
@@ -25,7 +26,9 @@ class FakeBusinessGateway:
             {
                 "id": "ORDER-TEST",
                 "user_id": user_id,
+                "status": "active",
                 "duration_minutes": 42,
+                "total_amount": 3.0,
             }
         ][:limit]
 
@@ -33,8 +36,8 @@ class FakeBusinessGateway:
         return {
             "order_id": order_id,
             "items": [
-                {"code": "base_fee", "amount": 2.0},
-                {"code": "overtime_fee", "amount": 1.0},
+                {"code": "base_fee", "label": "基础使用费", "amount": 2.0},
+                {"code": "overtime_fee", "label": "超时费", "amount": 1.0},
             ],
             "total_amount": 3.0,
         }
@@ -46,7 +49,9 @@ class FakeBusinessGateway:
             "lat": 30.2741,
             "lng": 120.1551,
             "online": True,
+            "available_umbrellas": 8,
             "available_docks": 0,
+            "updated_at": "2026-11-16T10:00:00+08:00",
         }
 
     async def find_nearby_stations(
@@ -61,14 +66,24 @@ class FakeBusinessGateway:
             {
                 "id": "station-nearby",
                 "name": "测试可还网点",
+                "lat": 30.2748,
+                "lng": 120.1568,
+                "online": True,
                 "distance_m": 180,
                 "available_umbrellas": 6,
                 "available_docks": 4,
+                "updated_at": "2026-11-16T10:00:00+08:00",
             }
         ]
 
     async def create_support_ticket(self, payload: dict[str, object]) -> dict[str, object]:
-        return {"id": "TKT-TEST", "status": "open", **payload}
+        return {
+            "id": "TKT-TEST",
+            "status": "open",
+            "category": payload["category"],
+            "references": payload["references"],
+            "summary": payload["summary"],
+        }
 
 
 class FailingModelGateway:

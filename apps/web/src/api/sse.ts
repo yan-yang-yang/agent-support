@@ -5,6 +5,8 @@ export type SupportStreamEvent =
   | { type: "message.started"; data: { requestId: string; assistantId: string; message: MessageWire } }
   | { type: "progress.updated"; data: { steps: ProgressStep[] } }
   | { type: "assistant.delta"; data: { delta: string } }
+  | { type: "tool.started"; data: { name: string } }
+  | { type: "tool.completed"; data: { name: string; status: string; callId: string; errorCode?: string | null } }
   | { type: "business_card"; data: { card: BusinessCardData } }
   | { type: "assistant.completed"; data: { requestId: string; message: MessageWire } }
 

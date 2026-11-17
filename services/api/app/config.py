@@ -22,6 +22,7 @@ class Settings:
     model_max_retries: int = 2
     model_temperature: float | None = 0.2
     model_max_output_tokens: int | None = 600
+    agent_max_tool_calls: int = 6
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -45,4 +46,5 @@ class Settings:
             model_max_retries=int(os.getenv("MODEL_MAX_RETRIES", "2")),
             model_temperature=float(os.getenv("MODEL_TEMPERATURE", "0.2")),
             model_max_output_tokens=int(os.getenv("MODEL_MAX_OUTPUT_TOKENS", "600")),
+            agent_max_tool_calls=int(os.getenv("AGENT_MAX_TOOL_CALLS", "6")),
         )

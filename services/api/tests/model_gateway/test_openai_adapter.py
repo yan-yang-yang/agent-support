@@ -89,6 +89,7 @@ def test_stream_normalizes_text_tool_usage_and_completion_events(tmp_path) -> No
     assert captured_body["model"] == "provider-model"
     assert captured_body["stream_options"] == {"include_usage": True}
     assert captured_body["tool_choice"] == "auto"
+    assert captured_body["parallel_tool_calls"] is False
 
 
 def test_provider_timeout_is_retried_and_normalized(tmp_path) -> None:
