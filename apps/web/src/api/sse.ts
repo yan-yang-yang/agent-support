@@ -2,13 +2,13 @@ import { API_BASE_URL, DEMO_USER_ID, type MessageWire } from "@/api/client"
 import type { BusinessCardData, ProgressStep } from "@/types/chat"
 
 export type SupportStreamEvent =
-  | { type: "message.started"; data: { requestId: string; assistantId: string; message: MessageWire } }
+  | { type: "message.started"; data: { requestId: string; traceId: string; assistantId: string; message: MessageWire } }
   | { type: "progress.updated"; data: { steps: ProgressStep[] } }
   | { type: "assistant.delta"; data: { delta: string } }
   | { type: "tool.started"; data: { name: string } }
   | { type: "tool.completed"; data: { name: string; status: string; callId: string; errorCode?: string | null } }
   | { type: "business_card"; data: { card: BusinessCardData } }
-  | { type: "assistant.completed"; data: { requestId: string; message: MessageWire } }
+  | { type: "assistant.completed"; data: { requestId: string; traceId: string; message: MessageWire } }
 
 interface StreamMessageOptions {
   conversationId: string

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -17,13 +17,20 @@ from .memory.types import MEMORY_LABELS
 from .model_gateway.factory import create_model_gateway
 from .model_gateway.protocol import ModelGateway
 from .model_gateway.repository import ModelCallRepository
+from .observability.repository import TraceRepository
+from .observability.service import TraceService
 from .repository import ConversationNotFoundError, SQLiteConversationRepository
 from .schemas import (
     ConversationDTO,
     CreateConversationRequest,
     DeleteMemoriesResponse,
     MessageDTO,
+    ModelSpanDTO,
     SendMessageRequest,
+    ToolSpanDTO,
+    TraceDetailDTO,
+    TraceSummaryDTO,
+    TurnTraceDTO,
     UserMemoryDTO,
 )
 from .sse import stream_support_reply
@@ -59,6 +66,8 @@ def create_app(
         summary_max_chars=resolved_settings.memory_summary_max_chars,
         max_long_term_items=resolved_settings.memory_max_long_term_items,
     )
+    trace_repository = TraceRepository(resolved_settings.database_path)
+    trace_service = TraceService(trace_repository)
     tool_executor = ToolExecutor(
         gateway=resolved_business_gateway,
         repository=tool_call_repository,
@@ -74,6 +83,7 @@ def create_app(
         await model_call_repository.initialize()
         await tool_call_repository.initialize()
         await memory_repository.initialize()
+        await trace_repository.initialize()
         try:
             yield
         finally:
@@ -85,7 +95,7 @@ def create_app(
             if owns_model_gateway:
                 await resolved_model_gateway.close()
 
-    app = FastAPI(title="Agent Support API", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Agent Support API", version="0.3.0", lifespan=lifespan)
     app.state.repository = repository
     app.state.settings = resolved_settings
     app.state.business_gateway = resolved_business_gateway
@@ -95,6 +105,8 @@ def create_app(
     app.state.agent_runner = agent_runner
     app.state.memory_repository = memory_repository
     app.state.memory_service = memory_service
+    app.state.trace_repository = trace_repository
+    app.state.trace_service = trace_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -153,6 +165,35 @@ def create_app(
         deleted = await memory_repository.delete_user_memories(user_id)
         return DeleteMemoriesResponse(deleted=deleted)
 
+    @app.get("/api/v1/observability/summary", response_model=TraceSummaryDTO)
+    async def observability_summary(
+        user_id: str = Depends(current_user),
+    ) -> TraceSummaryDTO:
+        summary = await trace_repository.summary(user_id)
+        return TraceSummaryDTO.model_validate(summary)
+
+    @app.get("/api/v1/observability/traces", response_model=list[TurnTraceDTO])
+    async def list_traces(
+        limit: int = Query(default=20, ge=1, le=100),
+        user_id: str = Depends(current_user),
+    ) -> list[TurnTraceDTO]:
+        traces = await trace_repository.list_traces(user_id, limit)
+        return [TurnTraceDTO.model_validate(trace) for trace in traces]
+
+    @app.get("/api/v1/observability/traces/{trace_id}", response_model=TraceDetailDTO)
+    async def trace_detail(
+        trace_id: str,
+        user_id: str = Depends(current_user),
+    ) -> TraceDetailDTO:
+        detail = await trace_repository.get_detail(trace_id, user_id)
+        if detail is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trace not found")
+        return TraceDetailDTO(
+            trace=TurnTraceDTO.model_validate(detail.trace),
+            tool_spans=[ToolSpanDTO.model_validate(span) for span in detail.tool_spans],
+            model_spans=[ModelSpanDTO.model_validate(span) for span in detail.model_spans],
+        )
+
     @app.get("/api/v1/conversations/{conversation_id}/messages", response_model=list[MessageDTO])
     async def list_messages(
         conversation_id: str,
@@ -176,6 +217,7 @@ def create_app(
                 agent_runner=agent_runner,
                 model_gateway=resolved_model_gateway,
                 memory_service=memory_service,
+                trace_service=trace_service,
                 user_id=user_id,
                 conversation_id=conversation_id,
                 content=payload.content.strip(),

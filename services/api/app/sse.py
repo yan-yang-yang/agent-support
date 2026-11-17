@@ -11,6 +11,7 @@ from .agent.runner import AgentRunner
 from .memory.service import MemoryService
 from .model_gateway.protocol import ModelGateway, ModelGatewayError
 from .model_gateway.types import VERIFIED_RESPONSE_MARKER, ModelMessage, ModelRequest, TextDelta
+from .observability.service import TraceService, TraceSession
 from .repository import SQLiteConversationRepository
 
 
@@ -35,6 +36,57 @@ async def stream_support_reply(
     agent_runner: AgentRunner,
     model_gateway: ModelGateway,
     memory_service: MemoryService,
+    trace_service: TraceService,
+    user_id: str,
+    conversation_id: str,
+    content: str,
+    request_id: str,
+    character_delay: float,
+) -> AsyncIterator[str]:
+    trace_session = await trace_service.start_turn(
+        request_id=request_id,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        content=content,
+    )
+    final_status = "cancelled"
+    final_error_code: str | None = "STREAM_CLOSED"
+    try:
+        async for event in _stream_support_reply(
+            repository=repository,
+            agent_runner=agent_runner,
+            model_gateway=model_gateway,
+            memory_service=memory_service,
+            trace_session=trace_session,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            content=content,
+            request_id=request_id,
+            character_delay=character_delay,
+        ):
+            yield event
+    except asyncio.CancelledError:
+        final_status = "cancelled"
+        final_error_code = "CLIENT_DISCONNECTED"
+        raise
+    except Exception:
+        final_status = "failed"
+        final_error_code = "TURN_STREAM_ERROR"
+        raise
+    else:
+        final_status = "completed"
+        final_error_code = None
+    finally:
+        await trace_session.finish(final_status, final_error_code)
+
+
+async def _stream_support_reply(
+    *,
+    repository: SQLiteConversationRepository,
+    agent_runner: AgentRunner,
+    model_gateway: ModelGateway,
+    memory_service: MemoryService,
+    trace_session: TraceSession,
     user_id: str,
     conversation_id: str,
     content: str,
@@ -65,11 +117,15 @@ async def stream_support_reply(
         for message in memory_context.recent_messages
         if message.role == "user"
     )
+    trace_session.recent_message_count = len(memory_context.recent_messages)
+    trace_session.summary_used = memory_context.summary is not None
+    trace_session.long_term_memory_count = len(memory_context.long_term_memories)
 
     yield encode_sse(
         "message.started",
         {
             "requestId": request_id,
+            "traceId": trace_session.id,
             "assistantId": assistant_id,
             "message": user_message.model_dump(mode="json"),
         },
@@ -102,6 +158,9 @@ async def stream_support_reply(
             )
         elif isinstance(agent_event, AgentCompletedEvent):
             agent_result = agent_event.result
+            trace_session.scenario = agent_result.scenario
+            trace_session.safe_fallback = agent_result.safe_fallback
+            trace_session.error_code = agent_result.error_code
 
     if agent_result is None:
         raise RuntimeError("Agent graph completed without a result")
@@ -178,6 +237,7 @@ async def stream_support_reply(
         "assistant.completed",
         {
             "requestId": request_id,
+            "traceId": trace_session.id,
             "message": assistant_message.model_dump(mode="json"),
         },
     )

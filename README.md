@@ -1,6 +1,6 @@
 # Agent Support
 
-公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务、可切换的 OpenAI-Compatible Model Gateway、LangGraph Agent、安全 Tool Executor，以及长短期记忆和上下文压缩。还伞失败、计费问题和附近网点三种流程的数据都通过白名单工具查询，不在前端或模型中编造订单事实。
+公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务、可切换的 OpenAI-Compatible Model Gateway、LangGraph Agent、安全 Tool Executor、长短期记忆、上下文压缩、轮次 Trace 与自动评测。还伞失败、计费问题和附近网点三种流程的数据都通过白名单工具查询，不在前端或模型中编造订单事实。
 
 ## 本地启动
 
@@ -54,6 +54,28 @@ Agent 使用 LangGraph 显式编排场景识别、工具规划、工具执行、
 curl -H 'X-Demo-User: demo-user' http://127.0.0.1:8000/api/v1/memories
 curl -X DELETE -H 'X-Demo-User: demo-user' http://127.0.0.1:8000/api/v1/memories
 ```
+
+### 可观测性
+
+每轮 SSE 对话都会生成 `traceId`，并通过同一个 `request_id` 关联 Agent 场景、上下文使用情况、Tool Span、Model Span、Token、耗时和安全降级状态。接口只返回当前用户的 Trace：
+
+```bash
+curl http://127.0.0.1:8000/api/v1/observability/summary
+curl http://127.0.0.1:8000/api/v1/observability/traces
+curl http://127.0.0.1:8000/api/v1/observability/traces/{trace_id}
+```
+
+汇总指标包括对话轮数、平均耗时、工具成功率、模型失败率、安全降级次数和累计 Token。详细 Trace 会列出每个工具与模型调用的状态、错误码和耗时。
+
+### Agent 自动评测
+
+先启动模拟业务服务，然后在 `services/api` 执行：
+
+```bash
+uv run python -m app.evals
+```
+
+评测集位于 `services/api/evals/support_cases.json`，当前覆盖还伞失败、退款诉求、附近网点、未知意图、提示注入和用户偏好更新。任一场景、必需工具、禁用工具或关键安全文案不符合预期时，命令会以非零状态退出。
 
 如需接入 OpenAI 或支持 Chat Completions 协议的兼容服务，在仓库根目录复制配置：
 
@@ -116,6 +138,8 @@ npm run build
 - 模型上下文由安全规则、滚动摘要、白名单长期偏好、近期消息和本轮已核验业务结果组成。
 - “还是不行”“那怎么办”等省略主语的追问会参考近期用户消息继承场景；无关新问题不会被旧场景带偏。
 - 当前场景预路由和记忆提取采用确定性规则，便于本地演示、审计和自动化测试。
+- `turn_traces` 记录每轮汇总，详情通过 `request_id` 关联 `tool_calls` 和 `model_calls`，不重复保存业务结果正文。
+- 固定评测集可直接调用真实 Agent Graph 与模拟业务 API，默认不依赖外部模型和 API Key。
 - 业务订单、计费、租借、网点和工单由独立 `mock-business` API 提供。
 - SQLite 用于本地演示；Repository 边界可在后续替换为 PostgreSQL。
 - 首期未实现 RAG 和人工客服接管。

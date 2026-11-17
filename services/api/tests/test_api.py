@@ -304,3 +304,79 @@ def test_model_receives_bounded_recent_context_plus_rolling_summary(tmp_path) ->
             "user",
             "assistant",
         ]
+
+
+def test_observability_trace_correlates_agent_tools_model_and_tokens(tmp_path) -> None:
+    app = create_app(
+        Settings(database_path=tmp_path / "trace-api.db", stream_character_delay=0),
+        business_gateway=FakeBusinessGateway(),
+    )
+    headers = {"X-Demo-User": "trace-user"}
+    with TestClient(app) as client:
+        conversation = client.post("/api/v1/conversations", json={}, headers=headers).json()
+        response = client.post(
+            f"/api/v1/conversations/{conversation['id']}/messages:stream",
+            json={
+                "content": "我对最近订单的费用有疑问",
+                "request_id": "trace-request-001",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200
+        events = parse_sse(response.text)
+        started = next(data for event, data in events if event == "message.started")
+
+        traces = client.get("/api/v1/observability/traces", headers=headers).json()
+        assert len(traces) == 1
+        trace = traces[0]
+        assert trace["id"] == started["traceId"]
+        assert trace["status"] == "completed"
+        assert trace["scenario"] == "billing_dispute"
+        assert trace["tool_call_count"] == 2
+        assert trace["tool_success_count"] == 2
+        assert trace["model_call_count"] == 1
+        assert trace["model_failure_count"] == 0
+        assert trace["total_tokens"] > 0
+        assert trace["duration_ms"] is not None
+
+        detail = client.get(
+            f"/api/v1/observability/traces/{trace['id']}",
+            headers=headers,
+        ).json()
+        assert [span["name"] for span in detail["tool_spans"]] == [
+            "list_recent_orders",
+            "get_order_billing",
+        ]
+        assert detail["model_spans"][0]["provider"] == "fake"
+        assert detail["model_spans"][0]["status"] == "completed"
+
+        unknown_response = client.post(
+            f"/api/v1/conversations/{conversation['id']}/messages:stream",
+            json={"content": "今天天气怎么样？", "request_id": "trace-request-002"},
+            headers=headers,
+        )
+        assert unknown_response.status_code == 200
+        latest_trace = client.get(
+            "/api/v1/observability/traces?limit=1",
+            headers=headers,
+        ).json()[0]
+        assert latest_trace["scenario"] == "unknown"
+        assert latest_trace["safe_fallback"] is True
+        assert latest_trace["tool_call_count"] == 0
+
+        summary = client.get("/api/v1/observability/summary", headers=headers).json()
+        assert summary["total_turns"] == 2
+        assert summary["completed_turns"] == 2
+        assert summary["safe_fallback_turns"] == 1
+        assert summary["tool_success_rate"] == 1.0
+        assert summary["model_failure_rate"] == 0.0
+        assert summary["total_tokens"] > trace["total_tokens"]
+
+        assert client.get(
+            "/api/v1/observability/traces",
+            headers={"X-Demo-User": "other-user"},
+        ).json() == []
+        assert client.get(
+            f"/api/v1/observability/traces/{trace['id']}",
+            headers={"X-Demo-User": "other-user"},
+        ).status_code == 404

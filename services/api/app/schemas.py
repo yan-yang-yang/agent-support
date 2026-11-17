@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConversationDTO(BaseModel):
@@ -52,3 +52,80 @@ class UserMemoryDTO(BaseModel):
 
 class DeleteMemoriesResponse(BaseModel):
     deleted: int
+
+
+class TurnTraceDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    request_id: str
+    conversation_id: str
+    scenario: str | None
+    status: Literal["started", "completed", "failed", "cancelled"]
+    safe_fallback: bool
+    error_code: str | None
+    input_chars: int
+    recent_message_count: int
+    summary_used: bool
+    long_term_memory_count: int
+    tool_call_count: int
+    tool_success_count: int
+    model_call_count: int
+    model_failure_count: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    duration_ms: int | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class ToolSpanDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    status: str
+    error_code: str | None
+    retryable: bool
+    latency_ms: int | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class ModelSpanDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    provider: str
+    model: str
+    status: str
+    error_code: str | None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    latency_ms: int | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class TraceDetailDTO(BaseModel):
+    trace: TurnTraceDTO
+    tool_spans: list[ToolSpanDTO]
+    model_spans: list[ModelSpanDTO]
+
+
+class TraceSummaryDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    total_turns: int
+    completed_turns: int
+    failed_turns: int
+    cancelled_turns: int
+    safe_fallback_turns: int
+    average_duration_ms: float
+    tool_calls: int
+    tool_success_rate: float
+    model_calls: int
+    model_failure_rate: float
+    total_tokens: int
