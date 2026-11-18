@@ -15,6 +15,8 @@ python3 scripts/smoke_test.py http://127.0.0.1
 
 默认通过 `http://127.0.0.1` 访问 H5。只对宿主机发布 `WEB_PORT`（默认 80）；FastAPI 和模拟业务 API 仅在 Compose 内部网络开放。SQLite 数据保存在 `agent-support_api-data` 命名卷中，容器更新不会删除聊天、记忆和 Trace 数据。
 
+默认的 `APP_ENVIRONMENT=demo` 与 `MODEL_PROVIDER=fake` 用于无外部密钥的完整演示。切换到真实服务时，将 `APP_ENVIRONMENT` 改为 `production`，并配置 OpenAI-Compatible 模型；应用会拒绝在生产模式下启动 Fake Model。
+
 生产或公网演示前，应至少修改 `.env` 中的 `APP_BUSINESS_INTERNAL_TOKEN`：
 
 ```bash

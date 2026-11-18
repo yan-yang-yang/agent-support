@@ -41,7 +41,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      APP_ENVIRONMENT: production
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-demo}
       APP_DATABASE_PATH: /data/agent-support.db
       APP_DEFAULT_USER_ID: ${APP_DEFAULT_USER_ID:-demo-user}
       APP_STREAM_CHARACTER_DELAY: ${APP_STREAM_CHARACTER_DELAY:-0.018}
