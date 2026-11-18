@@ -29,6 +29,7 @@ openssl rand -hex 32
 PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim
 NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine
 NGINX_IMAGE=docker.m.daocloud.io/library/nginx:1.27-alpine
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 ```
 
 停止服务但保留数据：

@@ -12,6 +12,7 @@ services:
       context: ./services/mock-business
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -36,6 +37,7 @@ services:
       context: ./services/api
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     restart: unless-stopped
     logging: *default-logging
     environment:
