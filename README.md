@@ -23,6 +23,14 @@ openssl rand -hex 32
 
 将生成值写入 `.env` 后重新执行 `docker compose up -d`。容器配置包含健康检查、自动重启、Nginx SSE 反向代理、API 基础限流和单容器最多 30MB 的 JSON 日志轮转。
 
+如果服务器无法访问 Docker Hub，可在 `.env` 中覆盖基础镜像地址；Dockerfile 默认值仍保持官方镜像：
+
+```text
+PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim
+NODE_IMAGE=docker.m.daocloud.io/library/node:22-alpine
+NGINX_IMAGE=docker.m.daocloud.io/library/nginx:1.27-alpine
+```
+
 停止服务但保留数据：
 
 ```bash
