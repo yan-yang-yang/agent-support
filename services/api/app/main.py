@@ -4,13 +4,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .agent.runner import AgentRunner
+from .auth import AuthTokenError, SignedAuthService, USER_ID_PATTERN, UserIdentity
 from .business import BusinessGateway, HttpUmbrellaBusinessGateway
-from .config import Settings
+from .config import DEFAULT_AUTH_SECRET, Settings
 from .memory.repository import MemoryRepository
 from .memory.service import MemoryService
 from .memory.types import MEMORY_LABELS
@@ -21,9 +22,12 @@ from .observability.repository import TraceRepository
 from .observability.service import TraceService
 from .repository import ConversationNotFoundError, SQLiteConversationRepository
 from .schemas import (
+    AuthUserDTO,
     ConversationDTO,
     CreateConversationRequest,
     DeleteMemoriesResponse,
+    DemoSessionRequest,
+    ExchangeLaunchTokenRequest,
     MessageDTO,
     ModelSpanDTO,
     SendMessageRequest,
@@ -44,6 +48,18 @@ def create_app(
     model_gateway: ModelGateway | None = None,
 ) -> FastAPI:
     resolved_settings = settings or Settings.from_environment()
+    if resolved_settings.environment.lower() == "production":
+        if not resolved_settings.auth_required:
+            raise ValueError("APP_AUTH_REQUIRED=true is required in production")
+        if resolved_settings.auth_secret == DEFAULT_AUTH_SECRET:
+            raise ValueError("APP_AUTH_SECRET must be changed in production")
+        if not resolved_settings.auth_cookie_secure:
+            raise ValueError("APP_AUTH_COOKIE_SECURE=true is required in production")
+    auth_service = SignedAuthService(
+        secret=resolved_settings.auth_secret,
+        launch_ttl_seconds=resolved_settings.auth_launch_ttl_seconds,
+        session_ttl_seconds=resolved_settings.auth_session_ttl_seconds,
+    )
     repository = SQLiteConversationRepository(resolved_settings.database_path)
     owns_business_gateway = business_gateway is None
     resolved_business_gateway = business_gateway or HttpUmbrellaBusinessGateway(
@@ -95,7 +111,7 @@ def create_app(
             if owns_model_gateway:
                 await resolved_model_gateway.close()
 
-    app = FastAPI(title="Agent Support API", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="Agent Support API", version="0.4.0", lifespan=lifespan)
     app.state.repository = repository
     app.state.settings = resolved_settings
     app.state.business_gateway = resolved_business_gateway
@@ -107,16 +123,79 @@ def create_app(
     app.state.memory_service = memory_service
     app.state.trace_repository = trace_repository
     app.state.trace_service = trace_service
+    app.state.auth_service = auth_service
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "X-Demo-User", "X-Request-ID"],
     )
 
-    def current_user(x_demo_user: str | None = Header(default=None)) -> str:
-        return x_demo_user or resolved_settings.default_user_id
+    def session_identity(
+        session_token: str | None = Cookie(
+            default=None,
+            alias=resolved_settings.auth_cookie_name,
+        ),
+    ) -> UserIdentity:
+        if not session_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+            )
+        try:
+            return auth_service.verify_session_token(session_token)
+        except AuthTokenError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired session",
+            ) from error
+
+    def current_identity(
+        session_token: str | None = Cookie(
+            default=None,
+            alias=resolved_settings.auth_cookie_name,
+        ),
+        x_demo_user: str | None = Header(default=None),
+    ) -> UserIdentity:
+        if session_token:
+            try:
+                return auth_service.verify_session_token(session_token)
+            except AuthTokenError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired session",
+                ) from error
+        if resolved_settings.auth_required:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+            )
+        fallback_user = x_demo_user or resolved_settings.default_user_id
+        if not USER_ID_PATTERN.fullmatch(fallback_user):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid demo user id",
+            )
+        return UserIdentity(
+            user_id=fallback_user,
+            display_name="演示用户",
+            source="demo-header",
+        )
+
+    def current_user(identity: UserIdentity = Depends(current_identity)) -> str:
+        return identity.user_id
+
+    def set_session_cookie(response: Response, identity: UserIdentity) -> None:
+        response.set_cookie(
+            key=resolved_settings.auth_cookie_name,
+            value=auth_service.issue_session_token(identity),
+            max_age=resolved_settings.auth_session_ttl_seconds,
+            httponly=True,
+            secure=resolved_settings.auth_cookie_secure,
+            samesite="lax",
+            path="/",
+        )
 
     async def owned_conversation(conversation_id: str, user_id: str) -> None:
         try:
@@ -132,6 +211,76 @@ def create_app(
             "model_provider": resolved_model_gateway.provider_name,
             "model": resolved_model_gateway.model_name,
         }
+
+    @app.get("/api/v1/auth/me", response_model=AuthUserDTO)
+    async def auth_me(identity: UserIdentity = Depends(session_identity)) -> AuthUserDTO:
+        return AuthUserDTO(
+            user_id=identity.user_id,
+            display_name=identity.display_name,
+            source=identity.source,
+        )
+
+    @app.post("/api/v1/auth/exchange", response_model=AuthUserDTO)
+    async def exchange_launch_token(
+        payload: ExchangeLaunchTokenRequest,
+        response: Response,
+    ) -> AuthUserDTO:
+        try:
+            launch_identity = auth_service.verify_launch_token(payload.launch_token)
+        except AuthTokenError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired launch token",
+            ) from error
+        identity = UserIdentity(
+            user_id=launch_identity.user_id,
+            display_name=launch_identity.display_name,
+            source="launch",
+        )
+        set_session_cookie(response, identity)
+        return AuthUserDTO(
+            user_id=identity.user_id,
+            display_name=identity.display_name,
+            source=identity.source,
+        )
+
+    @app.post("/api/v1/auth/demo-session", response_model=AuthUserDTO)
+    async def create_demo_session(
+        payload: DemoSessionRequest,
+        response: Response,
+    ) -> AuthUserDTO:
+        if resolved_settings.environment.lower() == "production":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Demo authentication is disabled",
+            )
+        display_names = {
+            "demo-user": "演示用户",
+            "demo-return-user": "还伞场景用户",
+            "demo-billing-user": "计费场景用户",
+            "demo-nearby-user": "附近网点场景用户",
+        }
+        identity = UserIdentity(
+            user_id=f"{payload.profile}~{payload.client_id}",
+            display_name=display_names[payload.profile],
+            source="demo",
+        )
+        set_session_cookie(response, identity)
+        return AuthUserDTO(
+            user_id=identity.user_id,
+            display_name=identity.display_name,
+            source=identity.source,
+        )
+
+    @app.post("/api/v1/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+    async def logout(response: Response) -> None:
+        response.delete_cookie(
+            key=resolved_settings.auth_cookie_name,
+            path="/",
+            secure=resolved_settings.auth_cookie_secure,
+            httponly=True,
+            samesite="lax",
+        )
 
     @app.get("/api/v1/conversations", response_model=list[ConversationDTO])
     async def list_conversations(user_id: str = Depends(current_user)) -> list[ConversationDTO]:

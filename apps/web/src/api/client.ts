@@ -1,7 +1,6 @@
 import type { BusinessCardData, ChatMessage, Conversation } from "@/types/chat"
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1"
-const DEMO_USER_ID = "demo-user"
+import { API_BASE_URL } from "@/api/config"
 
 interface ConversationWire {
   id: string
@@ -24,9 +23,9 @@ export interface MessageWire {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      "X-Demo-User": DEMO_USER_ID,
       ...init?.headers,
     },
   })
@@ -73,5 +72,3 @@ export async function createConversation(): Promise<Conversation> {
 export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
   return (await request<MessageWire[]>(`/conversations/${conversationId}/messages`)).map(mapMessage)
 }
-
-export { API_BASE_URL, DEMO_USER_ID }

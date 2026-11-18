@@ -31,6 +31,16 @@ def test_billing_user_has_explainable_line_items(client: TestClient) -> None:
     assert {item["code"] for item in billing["items"]} == {"base_fee", "overtime_fee"}
 
 
+def test_demo_browser_alias_uses_seeded_business_profile(client: TestClient) -> None:
+    user_id = "demo-user~browser-client-001"
+    rental = client.get(f"/v1/users/{user_id}/active-rental").json()
+    orders = client.get(f"/v1/users/{user_id}/orders").json()
+
+    assert rental["user_id"] == user_id
+    assert orders[0]["user_id"] == user_id
+    assert rental["order_id"] == orders[0]["id"]
+
+
 def test_nearby_search_filters_and_sorts_return_capacity(client: TestClient) -> None:
     stations = client.get(
         "/v1/stations/nearby",

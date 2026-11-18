@@ -1,4 +1,5 @@
-import { API_BASE_URL, DEMO_USER_ID, type MessageWire } from "@/api/client"
+import { type MessageWire } from "@/api/client"
+import { API_BASE_URL } from "@/api/config"
 import type { BusinessCardData, ProgressStep } from "@/types/chat"
 
 export type SupportStreamEvent =
@@ -21,10 +22,10 @@ interface StreamMessageOptions {
 export async function streamMessage(options: StreamMessageOptions): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/conversations/${options.conversationId}/messages:stream`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      "X-Demo-User": DEMO_USER_ID,
       "X-Request-ID": options.requestId,
     },
     body: JSON.stringify({ content: options.content, request_id: options.requestId }),

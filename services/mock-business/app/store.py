@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,18 +39,20 @@ class SeedStore:
         return cls(Path(__file__).with_name("seed.json"))
 
     def get_active_rental(self, user_id: str) -> Rental:
-        user = self._require_user(user_id)
+        template_user_id = self._resolve_user_id(user_id)
+        user = self._users[template_user_id]
         rental_id = user.get("active_rental_id")
         if not rental_id or rental_id not in self._rentals:
             raise BusinessRecordNotFoundError(f"No active rental for {user_id}")
-        return Rental.model_validate(deepcopy(self._rentals[str(rental_id)]))
+        rental = Rental.model_validate(deepcopy(self._rentals[str(rental_id)]))
+        return rental.model_copy(update={"user_id": user_id})
 
     def list_orders(self, user_id: str, limit: int) -> list[Order]:
-        self._require_user(user_id)
+        template_user_id = self._resolve_user_id(user_id)
         orders = [
-            Order.model_validate(deepcopy(order))
+            Order.model_validate(deepcopy(order)).model_copy(update={"user_id": user_id})
             for order in self._orders.values()
-            if order["user_id"] == user_id
+            if order["user_id"] == template_user_id
         ]
         orders.sort(key=lambda order: order.started_at, reverse=True)
         return orders[:limit]
@@ -114,10 +117,19 @@ class SeedStore:
         return ticket.model_copy(deep=True)
 
     def _require_user(self, user_id: str) -> dict[str, object]:
-        user = self._users.get(user_id)
-        if user is None:
-            raise BusinessRecordNotFoundError(f"User not found: {user_id}")
-        return user
+        return self._users[self._resolve_user_id(user_id)]
+
+    def _resolve_user_id(self, user_id: str) -> str:
+        if user_id in self._users:
+            return user_id
+        template_user_id, separator, client_id = user_id.partition("~")
+        if (
+            separator
+            and template_user_id in self._users
+            and re.fullmatch(r"[A-Za-z0-9_-]{8,80}", client_id)
+        ):
+            return template_user_id
+        raise BusinessRecordNotFoundError(f"User not found: {user_id}")
 
     @staticmethod
     def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:

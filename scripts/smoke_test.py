@@ -5,8 +5,9 @@ import argparse
 import json
 import sys
 from collections import Counter
+from http.cookiejar import CookieJar
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 from uuid import uuid4
 
 
@@ -15,7 +16,7 @@ def request_json(
     *,
     method: str = "GET",
     payload: dict[str, object] | None = None,
-    user_id: str,
+    opener,
 ) -> object:
     body = json.dumps(payload).encode() if payload is not None else None
     request = Request(
@@ -24,10 +25,9 @@ def request_json(
         method=method,
         headers={
             "Content-Type": "application/json",
-            "X-Demo-User": user_id,
         },
     )
-    with urlopen(request, timeout=30) as response:
+    with opener.open(request, timeout=30) as response:
         return json.loads(response.read().decode())
 
 
@@ -35,7 +35,7 @@ def stream_events(
     url: str,
     *,
     payload: dict[str, object],
-    user_id: str,
+    opener,
 ) -> list[tuple[str, dict[str, object]]]:
     request = Request(
         url,
@@ -44,10 +44,9 @@ def stream_events(
         headers={
             "Accept": "text/event-stream",
             "Content-Type": "application/json",
-            "X-Demo-User": user_id,
         },
     )
-    with urlopen(request, timeout=60) as response:
+    with opener.open(request, timeout=60) as response:
         text = response.read().decode()
 
     events: list[tuple[str, dict[str, object]]] = []
@@ -66,18 +65,28 @@ def stream_events(
 
 def run(base_url: str) -> None:
     base_url = base_url.rstrip("/")
-    user_id = f"smoke-user-{uuid4().hex[:8]}"
+    client_id = f"smoke-client-{uuid4().hex[:8]}"
     request_id = f"smoke-request-{uuid4()}"
+    opener = build_opener(HTTPCookieProcessor(CookieJar()))
 
     with urlopen(f"{base_url}/health", timeout=10) as response:
         if response.status != 200:
             raise RuntimeError(f"web health returned {response.status}")
 
+    identity = request_json(
+        f"{base_url}/api/v1/auth/demo-session",
+        method="POST",
+        payload={"client_id": client_id, "profile": "demo-user"},
+        opener=opener,
+    )
+    if not isinstance(identity, dict) or "user_id" not in identity:
+        raise RuntimeError("demo authentication returned an invalid response")
+
     conversation = request_json(
         f"{base_url}/api/v1/conversations",
         method="POST",
         payload={},
-        user_id=user_id,
+        opener=opener,
     )
     if not isinstance(conversation, dict) or "id" not in conversation:
         raise RuntimeError("conversation creation returned an invalid response")
@@ -85,7 +94,7 @@ def run(base_url: str) -> None:
     events = stream_events(
         f"{base_url}/api/v1/conversations/{conversation['id']}/messages:stream",
         payload={"content": "附近哪里可以还伞？", "request_id": request_id},
-        user_id=user_id,
+        opener=opener,
     )
     event_names = [name for name, _ in events]
     required_events = {
@@ -106,7 +115,7 @@ def run(base_url: str) -> None:
 
     traces = request_json(
         f"{base_url}/api/v1/observability/traces?limit=10",
-        user_id=user_id,
+        opener=opener,
     )
     if not isinstance(traces, list) or not any(
         trace.get("request_id") == request_id and trace.get("status") == "completed"
@@ -114,11 +123,31 @@ def run(base_url: str) -> None:
     ):
         raise RuntimeError("completed trace was not found")
 
+    second_opener = build_opener(HTTPCookieProcessor(CookieJar()))
+    second_identity = request_json(
+        f"{base_url}/api/v1/auth/demo-session",
+        method="POST",
+        payload={"client_id": f"{client_id}-other", "profile": "demo-user"},
+        opener=second_opener,
+    )
+    try:
+        request_json(
+            f"{base_url}/api/v1/conversations/{conversation['id']}/messages",
+            opener=second_opener,
+        )
+    except HTTPError as error:
+        if error.code != 404:
+            raise
+    else:
+        raise RuntimeError("a second authenticated user could read the first user's conversation")
+
     print(
         json.dumps(
             {
                 "status": "passed",
                 "base_url": base_url,
+                "auth_user_id": identity["user_id"],
+                "isolated_from_user_id": second_identity["user_id"],
                 "conversation_id": conversation["id"],
                 "request_id": request_id,
                 "trace_id": completed["traceId"],

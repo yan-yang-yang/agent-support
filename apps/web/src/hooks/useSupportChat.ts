@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { ensureSupportSession, type AuthUser } from "@/api/auth"
 import { createConversation, listConversations, listMessages, mapMessage } from "@/api/client"
 import { streamMessage, type SupportStreamEvent } from "@/api/sse"
 import type { ChatMessage, Conversation } from "@/types/chat"
@@ -11,6 +12,7 @@ export function useSupportChat() {
   const [isLoading, setIsLoading] = useState(true)
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const activeController = useRef<AbortController | null>(null)
 
   const refreshConversations = useCallback(async () => {
@@ -61,6 +63,9 @@ export function useSupportChat() {
     const initialize = async () => {
       setIsLoading(true)
       try {
+        const identity = await ensureSupportSession()
+        if (cancelled) return
+        setCurrentUser(identity)
         let history = await listConversations()
         if (cancelled) return
         if (history.length === 0) {
@@ -72,7 +77,7 @@ export function useSupportChat() {
         setActiveConversationId(history[0].id)
         setMessages(await listMessages(history[0].id))
       } catch {
-        if (!cancelled) setError("无法连接客服后端，请确认 FastAPI 服务已启动。")
+        if (!cancelled) setError("身份校验失败，请从公共雨伞业务入口重新进入客服。")
       } finally {
         if (!cancelled) setIsLoading(false)
       }
@@ -191,6 +196,7 @@ export function useSupportChat() {
     isLoading,
     isStreaming,
     error,
+    currentUser,
     sendMessage,
     stopStreaming,
     selectConversation,

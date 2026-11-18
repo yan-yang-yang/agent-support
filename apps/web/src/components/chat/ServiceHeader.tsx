@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button"
 
 interface ServiceHeaderProps {
   disabled?: boolean
+  userName?: string
   onOpenHistory: () => void
 }
 
-export function ServiceHeader({ disabled = false, onOpenHistory }: ServiceHeaderProps) {
+export function ServiceHeader({ disabled = false, userName, onOpenHistory }: ServiceHeaderProps) {
   return (
     <header className="safe-top z-20 flex min-h-[58px] shrink-0 items-center justify-between border-b border-border bg-white px-4">
       <div className="flex items-center gap-3">
@@ -18,7 +19,9 @@ export function ServiceHeader({ disabled = false, onOpenHistory }: ServiceHeader
           <h1 className="text-[15px] font-semibold leading-5 tracking-tight text-foreground">公共雨伞智能客服</h1>
           <div className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-[#16866e]" aria-hidden="true" />
-            <span className="text-[11px] font-medium leading-[14px] text-[#5e6b78]">AI 在线</span>
+            <span className="text-[11px] font-medium leading-[14px] text-[#5e6b78]">
+              AI 在线{userName ? ` · ${userName}` : ""}
+            </span>
           </div>
         </div>
       </div>

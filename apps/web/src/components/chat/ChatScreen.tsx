@@ -18,6 +18,7 @@ export function ChatScreen() {
     isLoading,
     isStreaming,
     error,
+    currentUser,
     sendMessage,
     stopStreaming,
     selectConversation,
@@ -28,7 +29,11 @@ export function ChatScreen() {
   return (
     <div className="app-backdrop flex min-h-[100dvh] items-center justify-center sm:p-5">
       <main className="relative flex h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden bg-background shadow-soft sm:h-[min(844px,calc(100dvh-40px))] sm:rounded-[34px] sm:border-[7px] sm:border-white/50 sm:ring-1 sm:ring-black/5">
-        <ServiceHeader disabled={isStreaming || isLoading} onOpenHistory={() => setHistoryOpen(true)} />
+        <ServiceHeader
+          disabled={isStreaming || isLoading}
+          userName={currentUser?.display_name}
+          onOpenHistory={() => setHistoryOpen(true)}
+        />
 
         {isLoading ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-[#6f7c88]">

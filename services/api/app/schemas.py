@@ -33,6 +33,26 @@ class SendMessageRequest(BaseModel):
     request_id: str = Field(min_length=8, max_length=80)
 
 
+class AuthUserDTO(BaseModel):
+    user_id: str
+    display_name: str
+    source: str
+
+
+class ExchangeLaunchTokenRequest(BaseModel):
+    launch_token: str = Field(min_length=32, max_length=4096)
+
+
+class DemoSessionRequest(BaseModel):
+    client_id: str = Field(min_length=8, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    profile: Literal[
+        "demo-user",
+        "demo-return-user",
+        "demo-billing-user",
+        "demo-nearby-user",
+    ] = "demo-user"
+
+
 class ProgressStep(BaseModel):
     label: str
     state: Literal["pending", "active", "complete"]

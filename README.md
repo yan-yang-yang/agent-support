@@ -1,6 +1,6 @@
 # Agent Support
 
-公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务、可切换的 OpenAI-Compatible Model Gateway、LangGraph Agent、安全 Tool Executor、长短期记忆、上下文压缩、轮次 Trace 与自动评测。还伞失败、计费问题和附近网点三种流程的数据都通过白名单工具查询，不在前端或模型中编造订单事实。
+公共雨伞智能客服演示项目。当前包含 React H5、签名用户入口与 HttpOnly 会话、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务、可切换的 OpenAI-Compatible Model Gateway、LangGraph Agent、安全 Tool Executor、长短期记忆、上下文压缩、轮次 Trace 与自动评测。还伞失败、计费问题和附近网点三种流程的数据都通过白名单工具查询，不在前端或模型中编造订单事实。
 
 ## Docker Compose 一键启动
 
@@ -15,15 +15,37 @@ python3 scripts/smoke_test.py http://127.0.0.1
 
 默认通过 `http://127.0.0.1` 访问 H5。只对宿主机发布 `WEB_PORT`（默认 80）；FastAPI 和模拟业务 API 仅在 Compose 内部网络开放。SQLite 数据保存在 `agent-support_api-data` 命名卷中，容器更新不会删除聊天、记忆和 Trace 数据。
 
-默认的 `APP_ENVIRONMENT=demo` 与 `MODEL_PROVIDER=fake` 用于无外部密钥的完整演示。切换到真实服务时，将 `APP_ENVIRONMENT` 改为 `production`，并配置 OpenAI-Compatible 模型；应用会拒绝在生产模式下启动 Fake Model。
+默认的 `APP_ENVIRONMENT=demo` 与 `MODEL_PROVIDER=fake` 用于无外部密钥的完整演示。每个浏览器会获得独立的签名演示会话，不再共享聊天历史。切换到真实服务时，将 `APP_ENVIRONMENT` 改为 `production`，并配置 OpenAI-Compatible 模型；应用会拒绝生产模式下的 Fake Model、未启用鉴权、默认鉴权密钥或非 Secure Cookie。
 
-生产或公网演示前，应至少修改 `.env` 中的 `APP_BUSINESS_INTERNAL_TOKEN`：
+生产或公网演示前，应修改 `.env` 中的 `APP_BUSINESS_INTERNAL_TOKEN` 和 `APP_AUTH_SECRET`：
 
 ```bash
 openssl rand -hex 32
 ```
 
 将生成值写入 `.env` 后重新执行 `docker compose up -d`。容器配置包含健康检查、自动重启、Nginx SSE 反向代理、API 基础限流和单容器最多 30MB 的 JSON 日志轮转。
+
+### 用户身份入口
+
+真实业务链路不接受 H5 自报的用户 ID。小程序先向业务后端申请客服入口，再由业务网关使用服务端密钥签发 5 分钟有效的 `launch_token`；密钥不会放进小程序。Token 位于 URL Fragment，不会发送给 Nginx 或写入访问日志；H5 首次打开后将其兑换为 HttpOnly 会话 Cookie，并立即从地址栏移除。生成一条联调用的签名链接：
+
+```bash
+docker compose exec api python -m app.auth_cli \
+  --base-url http://127.0.0.1 \
+  --user-id customer-1001 \
+  --display-name 小杨
+```
+
+生产环境还必须设置：
+
+```text
+APP_ENVIRONMENT=production
+APP_AUTH_REQUIRED=true
+APP_AUTH_COOKIE_SECURE=true
+APP_AUTH_SECRET=<独立随机密钥>
+```
+
+演示环境可以通过 `?demo_profile=demo-return-user`、`demo-billing-user` 或 `demo-nearby-user` 切换模拟业务档案；参数兑换会话后同样会从地址栏移除。
 
 如果服务器无法访问 Docker Hub，可在 `.env` 中覆盖基础镜像地址；Dockerfile 默认值仍保持官方镜像：
 
@@ -91,8 +113,12 @@ Agent 使用 LangGraph 显式编排场景识别、工具规划、工具执行、
 查看或清除当前演示用户的长期记忆：
 
 ```bash
-curl -H 'X-Demo-User: demo-user' http://127.0.0.1:8000/api/v1/memories
-curl -X DELETE -H 'X-Demo-User: demo-user' http://127.0.0.1:8000/api/v1/memories
+curl -c /tmp/agent-support-cookie -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"client_id":"curl-client-001","profile":"demo-user"}' \
+  http://127.0.0.1:8000/api/v1/auth/demo-session
+curl -b /tmp/agent-support-cookie http://127.0.0.1:8000/api/v1/memories
+curl -b /tmp/agent-support-cookie -X DELETE http://127.0.0.1:8000/api/v1/memories
 ```
 
 ### 可观测性
@@ -181,8 +207,10 @@ npm run build
 - `turn_traces` 记录每轮汇总，详情通过 `request_id` 关联 `tool_calls` 和 `model_calls`，不重复保存业务结果正文。
 - 固定评测集可直接调用真实 Agent Graph 与模拟业务 API，默认不依赖外部模型和 API Key。
 - Docker Compose 只公开 Nginx 入口，API 与模拟业务服务不直接暴露到公网；SQLite 使用命名卷持久化。
+- 正式入口使用短时 HMAC 签名 Token 兑换 HttpOnly 会话；生产模式强制启用鉴权与 Secure Cookie。
+- 演示入口为每个浏览器签发独立用户会话，模拟业务服务只允许受控的演示档案别名。
 - 业务订单、计费、租借、网点和工单由独立 `mock-business` API 提供。
 - SQLite 用于本地演示；Repository 边界可在后续替换为 PostgreSQL。
 - 首期未实现 RAG 和人工客服接管。
-- 当前 `X-Demo-User` 仅用于演示身份隔离，不是真实认证；接入真实用户和付费模型前需要增加登录鉴权、配额与更严格的公网限流。
+- `X-Demo-User` 只为后端单元测试和显式关闭鉴权的本地调试保留；Compose 默认启用 `APP_AUTH_REQUIRED=true`，该请求头完全失效。
 - `.env`、简历、PDF、运行时数据库和日志不会提交到仓库。
