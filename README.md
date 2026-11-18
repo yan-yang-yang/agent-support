@@ -2,6 +2,35 @@
 
 公共雨伞智能客服演示项目。当前包含 React H5、FastAPI SSE、SQLite 会话持久化、历史会话切换、独立的模拟公共雨伞业务服务、可切换的 OpenAI-Compatible Model Gateway、LangGraph Agent、安全 Tool Executor、长短期记忆、上下文压缩、轮次 Trace 与自动评测。还伞失败、计费问题和附近网点三种流程的数据都通过白名单工具查询，不在前端或模型中编造订单事实。
 
+## Docker Compose 一键启动
+
+服务器或已安装 Docker 的本机可以直接启动完整环境：
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose ps
+python3 scripts/smoke_test.py http://127.0.0.1
+```
+
+默认通过 `http://127.0.0.1` 访问 H5。只对宿主机发布 `WEB_PORT`（默认 80）；FastAPI 和模拟业务 API 仅在 Compose 内部网络开放。SQLite 数据保存在 `agent-support_api-data` 命名卷中，容器更新不会删除聊天、记忆和 Trace 数据。
+
+生产或公网演示前，应至少修改 `.env` 中的 `APP_BUSINESS_INTERNAL_TOKEN`：
+
+```bash
+openssl rand -hex 32
+```
+
+将生成值写入 `.env` 后重新执行 `docker compose up -d`。容器配置包含健康检查、自动重启、Nginx SSE 反向代理、API 基础限流和单容器最多 30MB 的 JSON 日志轮转。
+
+停止服务但保留数据：
+
+```bash
+docker compose down
+```
+
+不要在需要保留演示数据时执行 `docker compose down -v`。
+
 ## 本地启动
 
 ### 1. 模拟公共雨伞业务服务
@@ -140,7 +169,9 @@ npm run build
 - 当前场景预路由和记忆提取采用确定性规则，便于本地演示、审计和自动化测试。
 - `turn_traces` 记录每轮汇总，详情通过 `request_id` 关联 `tool_calls` 和 `model_calls`，不重复保存业务结果正文。
 - 固定评测集可直接调用真实 Agent Graph 与模拟业务 API，默认不依赖外部模型和 API Key。
+- Docker Compose 只公开 Nginx 入口，API 与模拟业务服务不直接暴露到公网；SQLite 使用命名卷持久化。
 - 业务订单、计费、租借、网点和工单由独立 `mock-business` API 提供。
 - SQLite 用于本地演示；Repository 边界可在后续替换为 PostgreSQL。
 - 首期未实现 RAG 和人工客服接管。
+- 当前 `X-Demo-User` 仅用于演示身份隔离，不是真实认证；接入真实用户和付费模型前需要增加登录鉴权、配额与更严格的公网限流。
 - `.env`、简历、PDF、运行时数据库和日志不会提交到仓库。
